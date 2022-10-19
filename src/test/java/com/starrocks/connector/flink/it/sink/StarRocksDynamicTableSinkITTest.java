@@ -14,6 +14,15 @@
 
 package com.starrocks.connector.flink.it.sink;
 
+import com.starrocks.connector.flink.table.sink.StarRocksDynamicSinkFunction;
+import com.starrocks.connector.flink.table.sink.StarRocksSinkOptions;
+import com.starrocks.connector.flink.table.sink.StarRocksSinkRowDataWithMeta;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.source.datagen.DataGeneratorSource;
+import org.apache.flink.streaming.api.functions.source.datagen.RandomGenerator;
+import org.apache.flink.streaming.api.functions.source.datagen.SequenceGenerator;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
 import org.junit.Test;
@@ -25,11 +34,61 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 import com.starrocks.connector.flink.StarRocksSinkBaseTest;
 
 public class StarRocksDynamicTableSinkITTest extends StarRocksSinkBaseTest {
-    
+
+    @Test
+    public void testMultiThreadFlush() throws Exception {
+        mockStarRocksVersion(null);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironmentWithWebUI(new Configuration());
+        env.setParallelism(1);
+        env.disableOperatorChaining();
+        env.getCheckpointConfig().setTolerableCheckpointFailureNumber(1000000);
+        env.enableCheckpointing(30 * 1000L);
+        StarRocksSinkOptions.Builder builder = StarRocksSinkOptions.builder()
+                .withProperty("jdbc-url", JDBC_URL)
+                .withProperty("load-url", LOAD_URL)
+                .withProperty("database-name", DATABASE)
+                .withProperty("table-name", TABLE)
+                .withProperty("username", USERNAME)
+                .withProperty("password", PASSWORD)
+                .withProperty("sink.label-prefix", SINK_LABEL_PREFIX)
+                .withProperty("sink.semantic", SINK_SEMANTIC.getName())
+                .withProperty("sink.buffer-flush.interval-ms", SINK_MAX_INTERVAL)
+                .withProperty("sink.buffer-flush.max-bytes", SINK_MAX_BYTES)
+                .withProperty("sink.buffer-flush.max-rows", SINK_MAX_ROWS)
+                .withProperty("sink.max-retries", SINK_MAX_RETRIES)
+                // .withProperty("sink.flush-thread", SINK_FLUSH_THREAD)
+                .withProperty("sink.connect.timeout-ms", "2000");
+
+        env.addSource(new DataGeneratorSource<>(SequenceGenerator.intGenerator(0, 10000) ,200, null)).returns(Integer.class)
+                .map(new MapFunction<Integer, StarRocksSinkRowDataWithMeta>() {
+                    @Override
+                    public StarRocksSinkRowDataWithMeta map(Integer s) throws Exception {
+                        StarRocksSinkRowDataWithMeta starRocksSinkRowDataWithMeta = new StarRocksSinkRowDataWithMeta();
+                        starRocksSinkRowDataWithMeta.setDatabase("db_" + new Random().nextInt(5));
+                        starRocksSinkRowDataWithMeta.setTable("table_" + new Random().nextInt(10));
+                        starRocksSinkRowDataWithMeta.addDataRow(s.toString());
+                        return starRocksSinkRowDataWithMeta;
+                    }
+                })
+                .addSink(new StarRocksDynamicSinkFunction<StarRocksSinkRowDataWithMeta>(builder.build())).setParallelism(10);
+        env.execute();
+    }
+
+    @Test
+    public void sum(){
+        //dataSum: 50005000
+        // dataRowCounts:10001
+        int sum = 0;
+        for (int i = 0; i < 10001; i++) {
+            sum += i;
+        }
+        System.out.println(sum);
+    }
     @Test
     public void testBatchSink() {
         List<Map<String, String>> meta = new ArrayList<>();

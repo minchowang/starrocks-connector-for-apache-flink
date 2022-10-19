@@ -41,10 +41,13 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 
@@ -55,7 +58,7 @@ public class StarRocksStreamLoadVisitor implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(StarRocksStreamLoadVisitor.class);
 
     private static final int ERROR_LOG_MAX_LENGTH = 3000;
-
+    public static AtomicInteger len =  new AtomicInteger(0);;
     private final StarRocksSinkOptions sinkOptions;
     private final String[] fieldNames;
     private long pos;
@@ -75,7 +78,8 @@ public class StarRocksStreamLoadVisitor implements Serializable {
     }
 
     public Map<String, Object> doStreamLoad(StarRocksSinkBufferEntity bufferEntity) throws IOException {
-        String host = getAvailableHost();
+        // String host = getAvailableHost();
+        String host = "http://127.0.0.1";
         if (null == host) {
             throw new IOException("None of the hosts in `load_url` could be connected.");
         }
@@ -86,7 +90,7 @@ public class StarRocksStreamLoadVisitor implements Serializable {
             .append(bufferEntity.getTable())
             .append("/_stream_load")
             .toString();
-        LOG.info(String.format("Start to join batch data: label[%s].", bufferEntity.getLabel()));
+        //LOG.info(String.format("Start to join batch data: label[%s].", bufferEntity.getLabel()));
         Map<String, Object> loadResult = doHttpPut(loadUrl, bufferEntity.getLabel(), joinRows(bufferEntity.getBuffer(),  (int) bufferEntity.getBatchSize()));
         final String keyStatus = "Status";
         if (null == loadResult || !loadResult.containsKey(keyStatus)) {
@@ -236,7 +240,10 @@ public class StarRocksStreamLoadVisitor implements Serializable {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> doHttpPut(String loadUrl, String label, byte[] data) throws IOException {
-        LOG.info(String.format("Executing stream load to: '%s', size: '%s', thread: %d", loadUrl, data.length, Thread.currentThread().getId()));
+
+        //LOG.info(String.format("Executing stream load to: '%s', size: '%s', thread: %d", loadUrl, data.length, Thread.currentThread().getId()));
+        // System.out.println(new String(data));
+        len.getAndAdd(Arrays.stream(new String(data).split("\n")).mapToInt(Integer::parseInt).reduce(Integer::sum).getAsInt());
         final HttpClientBuilder httpClientBuilder = HttpClients.custom()
             .setRedirectStrategy(new DefaultRedirectStrategy() {
                 @Override
@@ -265,12 +272,18 @@ public class StarRocksStreamLoadVisitor implements Serializable {
             httpPut.setHeader("Authorization", getBasicAuthHeader(sinkOptions.getUsername(), sinkOptions.getPassword()));
             httpPut.setEntity(new ByteArrayEntity(data));
             httpPut.setConfig(RequestConfig.custom().setRedirectsEnabled(true).build());
-            try (CloseableHttpResponse resp = httpclient.execute(httpPut)) {
-                HttpEntity respEntity = getHttpEntity(resp);
-                if (respEntity == null)
-                    return null;
-                return (Map<String, Object>)JSON.parse(EntityUtils.toString(respEntity));
+            try {
+                Thread.sleep(new Random().nextInt(500));
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
+            return Collections.singletonMap("Status", "OK");
+            // try (CloseableHttpResponse resp = httpclient.execute(httpPut)) {
+            //     HttpEntity respEntity = getHttpEntity(resp);
+            //     if (respEntity == null)
+            //         return null;
+            //     return (Map<String, Object>)JSON.parse(EntityUtils.toString(respEntity));
+            // }
         }
     }
 

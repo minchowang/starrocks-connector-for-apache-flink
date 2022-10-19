@@ -14,6 +14,8 @@
 
 package com.starrocks.connector.flink.manager.sink;
 
+import com.google.common.base.Stopwatch;
+import com.starrocks.connector.flink.manager.StarRocksStreamLoadVisitor;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.TableSchema.Builder;
 
@@ -28,6 +30,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -177,6 +180,44 @@ public class StarRocksSinkManagerTest extends StarRocksSinkBaseTest {
             exMsg = e.getMessage();
         }
         assertTrue(0 < exMsg.length());
+    }
+
+    @Test
+    public void testMultiThreadFlush() throws Exception {
+        mockTableStructure();
+        mockStarRocksVersion(null);
+        mockSuccessResponse();
+        String exMsg = "";
+        Stopwatch started = Stopwatch.createStarted();
+        try {
+            StarRocksSinkManager mgr = new StarRocksSinkManager(OPTIONS, TABLE_SCHEMA);
+            mgr.startAsyncFlushing();
+            mgr.startScheduler();
+            int sum = 0;
+            int count = 10 * 10000;
+            for (int i = 0; i < count ; i++) {
+                mgr.writeRecords("db_" + new Random().nextInt(20), "table_"+ new Random().nextInt(20), String.valueOf(i));
+                // Thread.sleep(1);
+                sum += i;
+            }
+            // mgr.writeRecords(OPTIONS.getDatabaseName(), OPTIONS.getTableName(), "");
+            // mgr.writeRecords("db1", "table1", "");
+            // mgr.writeRecords("db2", "table2", "");
+            // mgr.writeRecords("db3", "table3", "");
+            mgr.close();
+            // Thread.sleep(5000);
+            System.out.println(started.stop().elapsed(TimeUnit.MILLISECONDS) + "ms");
+            // data sum: 1783293664 dataSum: 1783293664
+            // dataRowCounts:1000000
+            System.out.println("data sum: " + sum + " dataSum: " + StarRocksStreamLoadVisitor.len);
+            System.out.println( "dataRowCounts:" + StarRocksSinkManager.dataRowCounts);
+            assertEquals(count , StarRocksSinkManager.dataRowCounts.get());
+            // assertEquals(count, StarRocksSinkManager.flushCount);
+        } catch (Exception e) {
+            exMsg = e.getMessage();
+            throw e;
+        }
+        assertEquals(0, exMsg.length());
     }
 
     @Test

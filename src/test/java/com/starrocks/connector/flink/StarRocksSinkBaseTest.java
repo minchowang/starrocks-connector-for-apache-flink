@@ -64,6 +64,7 @@ public abstract class StarRocksSinkBaseTest {
     protected final String SINK_MAX_BYTES = "74002019";
     protected final String SINK_MAX_ROWS = "1002000";
     protected final String SINK_MAX_RETRIES = "2";
+    protected final String SINK_FLUSH_THREAD = "16";
     protected final Map<String, String> SINK_PROPS = new HashMap<String, String>(){{
         put("filter-ratio", "0");
     }};
